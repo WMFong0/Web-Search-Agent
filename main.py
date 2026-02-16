@@ -31,7 +31,7 @@ prompt = """Help the user identify products related to a given abbreviation or t
 "BOH"
 
 **Repharsed Input**
-Hi. I'm a Hong Kong customer looking forward to buy health and beauty products that are available in Mannings HK retail store. Can you tell what products does "BOH" refer to? Give out the top result in the csv file format: product1, product2, product3.
+Hi. I'm a Hong Kong customer looking forward to buy health and beauty products that are available in Mannings HK or SaSa HK retail store. Can you tell what products does "BOH" refer to? Give out the top result in the csv file format: product1, product2, product3.
 **Output:**
 BOH Bee Honey Mask, BOH Green Tea Essence, BOH Probiotic Lotion
 
