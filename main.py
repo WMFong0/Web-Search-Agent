@@ -18,7 +18,7 @@ prompt = """Help the user identify products related to a given abbreviation or t
 
 # Steps
 1. Review the user query and focus on identifying products referenced by the term or abbreviation they provide (e.g., "BOH").
-2. Cross-reference the provided term against a hypothetical database or knowledge base of health and beauty products available at Mannings HK.
+2. Cross-reference the provided term against a hypothetical database or knowledge base of health and beauty products available at Mannings HK or SaSa HK.
 3. Select and return the top results that match the term, with clarity and relevance being prioritized.
 4. Format the response in the structure requested by the user (e.g., `product1, product2, product3`).
 
