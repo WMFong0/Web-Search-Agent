@@ -1,9 +1,15 @@
 import os
+import base64
+
+#.env dependancies
 from dotenv import load_dotenv
 
 from fastapi import FastAPI
+
 from pydantic import BaseModel
+
 from openai import OpenAI
+
 
 load_dotenv()
 
@@ -89,5 +95,4 @@ def format_response(response):
 
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run("main:app", host="0.0.0.0", port=int(os.getenv("PORT", 8000)), reload=True)
