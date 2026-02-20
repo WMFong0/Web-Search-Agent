@@ -107,7 +107,7 @@ async def post_input(text: Optional[str] = Query(None, description="Text query a
         return {
             "status": "ok", 
             "input": text, 
-            "output": formatted_output
+            "output": formatted_output if formatted_output else "null"
         }
         
     except HTTPException:
