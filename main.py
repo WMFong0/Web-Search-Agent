@@ -53,7 +53,7 @@ async def post_input(text: Optional[str] = Query(None, description="Text query a
     
     try:
         # Set up OpenAI client with Responses API endpoint
-        endpoint = "https://git-openai-poc.openai.azure.com/openai/v1"
+        endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
         deployment_name = "Michael-Web-Search-Test"  # Your deployment name
         api_key = os.getenv("AZURE_OPENAI_API_KEY")
         

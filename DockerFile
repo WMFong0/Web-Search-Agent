@@ -1,0 +1,64 @@
+# =========================
+# Stage 1: Builder
+# =========================
+FROM python:3.11-slim AS builder
+
+# Prevents Python from writing .pyc files and enables unbuffered output
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# System deps for building wheels (if needed)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Leverage Docker layer caching for deps
+COPY requirements.txt .
+RUN pip install --upgrade pip && \
+    pip wheel --no-cache-dir --no-deps --wheel-dir /wheels -r requirements.txt
+
+# =========================
+# Stage 2: Runtime
+# =========================
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Create non-root user
+RUN useradd -m appuser
+
+WORKDIR /app
+
+# Copy built wheels and install
+COPY --from=builder /wheels /wheels
+RUN pip install --no-cache-dir /wheels/*
+
+# Copy application code
+COPY main.py .
+
+# Expose FastAPI port
+EXPOSE 8000
+
+# Switch to non-root for security
+USER appuser
+
+# Healthcheck: hit /health endpoint
+HEALTHCHECK --interval=30s --timeout=3s --retries=3 CMD \
+  python - << 'PY' || exit 1
+import urllib.request, json
+try:
+    with urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=2) as r:
+        data = json.loads(r.read().decode())
+        exit(0 if data.get("status") == "healthy" else 1)
+except Exception:
+    exit(1)
+PY
+
+# Use uvicorn directly (reload off in containers)
+# NOTE: We rely on PORT env var (default 8000) to match your code.
+ENV PORT=8000
+
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
