@@ -9,27 +9,26 @@ load_dotenv()
 
 app = FastAPI()
 
-prompt = """Help the user identify products related to a given abbreviation or term available in Mannings HK or SaSa HK retail store. Return the top results in the format specified.
+prompt = """Help the user identify products type related to a given abbreviation or term available in Mannings HK or SaSa HK retail store. Return the top results in the format specified.
 
 # Steps
-1. Review the user query and focus on identifying products referenced by the term or abbreviation they provide (e.g., "BOH").
+1. Review the user query and focus on identifying products type referenced by the term or abbreviation they provide (e.g., "BOH").
 2. Cross-reference the provided term against a hypothetical database or knowledge base of health and beauty products available at Mannings HK or SaSa HK.
 3. Select and return the top results that match the term, with clarity and relevance being prioritized.
-4. Format the response in the structure requested by the user (e.g., `product1, product2, product3`).
+4. Format the response in the structure requested by the user (e.g., `product type1, product type2, product type3`).
 
 # Output Format
-- Return the list of products as a CSV (Comma-Separated Value) string with no additional text or formatting.
-- Example format for the output: `product1, product2, product3`
+- Return the list of products type as a CSV (Comma-Separated Value) string with no additional text or formatting.
+- Example format for the output: `product type1, product type2, product type3`
 
 # Examples
 **Input:**
 "BOH"
 
 **Repharsed Input**
-Hi. I'm a Hong Kong customer looking forward to buy health and beauty products that are available in Mannings HK or SaSa HK retail store. Can you tell what products does "BOH" refer to? Give out the top result in the csv file format: product1, product2, product3.
+Hi. I'm a Hong Kong customer looking forward to buy health and beauty products that are available in Mannings HK or SaSa HK retail store. Can you tell what products type does "BOH" refer to? Give out the top result in the csv file format: product1, product2, product3.
 **Output:**
-BOH Bee Honey Mask, BOH Green Tea Essence, BOH Probiotic Lotion
-
+Lifting Cream, Honey Mask, Green Tea Essence
 User query: """
 
 # Health check endpoint
