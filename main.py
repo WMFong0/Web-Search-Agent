@@ -116,7 +116,7 @@ async def add_request_id_and_log(request: Request, call_next):
         f"Incoming request {request.method} {request.url.path}",
         extra={"request_id": request_id},
     )
-
+    
     try:
         response = await call_next(request)
     except Exception:
