@@ -1,17 +1,31 @@
+# Python Package Included
 import os
 import json
 import uuid
+from datetime import datetime
+
+# Logging
 import logging
 from logging.handlers import RotatingFileHandler
+
+# dotenv for loading .env
 from dotenv import load_dotenv
+
+# Fast api for api implementation
 from fastapi import FastAPI, Query, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
-from openai import OpenAI
 from fastapi.openapi.utils import get_openapi
+
+# OpenAi for Connect OpenAI and chatting with AI
+from openai import OpenAI
+
+# Allow Optional Parameter
 from typing import Optional
+
+# Server and Port
 import uvicorn
-from datetime import datetime
+
 
 
 # =========
@@ -250,7 +264,8 @@ async def post_input(
                 }
             ],
             input=prompt + text,
-            timeout=30
+            timeout=30,
+            max_output_tokens=75
         )
 
         output = getattr(completion, "output_text", None)
@@ -304,10 +319,12 @@ app.openapi = custom_openapi
 async def root(request: Request):
     return RedirectResponse(url=request.url_for("swagger_ui"), status_code=307)
 
+# Swagger API Documentation
 @app.get("/docs", include_in_schema=False)
 async def swagger_ui():
     return get_swagger_ui_html(openapi_url=app.openapi_url, title=f"{app.title} - Swagger UI")
 
+# REDOC API Documentation
 @app.get("/redoc", include_in_schema=False)
 async def redoc_ui():
     return get_redoc_html(openapi_url=app.openapi_url, title=f"{app.title} - ReDoc")
