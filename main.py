@@ -4,7 +4,7 @@ import uuid
 import logging
 from logging.handlers import RotatingFileHandler
 from dotenv import load_dotenv
-from fastapi import FastAPI, Query, HTTPException, Request
+from fastapi import FastAPI, Query, HTTPException, Request, Depends, Header
 from fastapi.responses import JSONResponse
 from openai import OpenAI
 from typing import Optional
@@ -101,6 +101,40 @@ Hi. I'm a Hong Kong customer looking forward to buy health and beauty products t
 **Output:**
 Lifting Cream, Honey Mask, Green Tea Essence
 User query: """
+
+# =========
+# Auth & Rate Limiting
+# =========
+from collections import deque
+import time
+from starlette.status import HTTP_401_UNAUTHORIZED, HTTP_429_TOO_MANY_REQUESTS
+
+ALLOWED_API_KEYS = {k.strip() for k in os.getenv("APP_API_KEYS","" ).split(",") if k.strip()}
+RATE_LIMIT_WINDOW_SEC = int(os.getenv("RATE_LIMIT_WINDOW_SEC","60"))
+RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_MAX_REQUESTS","60"))
+_rate_buckets = {}
+
+async def require_api_key(x_api_key: Optional[str] = Header(default=None)):
+    if not ALLOWED_API_KEYS:
+        return
+    if not x_api_key or x_api_key not in ALLOWED_API_KEYS:
+        raise HTTPException(status_code=HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+
+def _rate_key(request: Request):
+    h = request.headers.get("X-Forwarded-For") or request.client.host
+    k = request.headers.get("X-Request-ID") or ""
+    return f"{h}|{k}"
+
+async def enforce_rate_limit(request: Request):
+    now = time.time()
+    key = _rate_key(request)
+    q = _rate_buckets.setdefault(key, deque())
+    while q and now - q[0] > RATE_LIMIT_WINDOW_SEC:
+        q.popleft()
+    if len(q) >= RATE_LIMIT_MAX_REQUESTS:
+        raise HTTPException(status_code=HTTP_429_TOO_MANY_REQUESTS, detail="Rate limit exceeded")
+    q.append(now)
+
 
 # =========
 # Middleware: Request ID & Structured Access Logs
@@ -212,6 +246,7 @@ async def post_input(
             detail="No text provided. Please provide 'text' as a query parameter (e.g., ?text=BOH)"
         )
 
+    await enforce_rate_limit(request)
     logger.info("Received input", extra={"request_id": request_id})
 
     # Environment setup
