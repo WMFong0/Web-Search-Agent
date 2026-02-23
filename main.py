@@ -1,13 +1,84 @@
 import os
+import json
+import uuid
+import logging
+from logging.handlers import RotatingFileHandler
 from dotenv import load_dotenv
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, Query, HTTPException, Request
+from fastapi.responses import JSONResponse
 from openai import OpenAI
 from typing import Optional
 import uvicorn
+from datetime import datetime
 
+# =========
+# Bootstrapping
+# =========
 load_dotenv()
 
-app = FastAPI()
+# =========
+# Logging Setup
+# =========
+def setup_logging():
+    # Create logs directory if not exists
+    os.makedirs("logs", exist_ok=True)
+
+    # LOG_LEVEL from env: DEBUG, INFO, WARNING, ERROR, CRITICAL
+    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    level = getattr(logging, log_level, logging.INFO)
+
+    # Root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(level)
+
+    # Remove default handlers to avoid duplicates if reload=True
+    for h in list(root_logger.handlers):
+        root_logger.removeHandler(h)
+
+    # Formatter (JSON-ish single-line)
+    class JsonLikeFormatter(logging.Formatter):
+        def format(self, record: logging.LogRecord) -> str:
+            base = {
+                "ts": datetime.utcnow().isoformat(timespec="milliseconds") + "Z",
+                "level": record.levelname,
+                "logger": record.name,
+                "msg": record.getMessage(),
+            }
+            # Add request_id if attached by middleware
+            if hasattr(record, "request_id"):
+                base["request_id"] = getattr(record, "request_id")
+            # Add exception info if present
+            if record.exc_info:
+                base["exc_info"] = self.formatException(record.exc_info)
+            return json.dumps(base, ensure_ascii=False)
+
+    formatter = JsonLikeFormatter()
+
+    # Console handler
+    ch = logging.StreamHandler()
+    ch.setLevel(level)
+    ch.setFormatter(formatter)
+    root_logger.addHandler(ch)
+
+    # Rotating file handler
+    fh = RotatingFileHandler("logs/app.log", maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8")
+    fh.setLevel(level)
+    fh.setFormatter(formatter)
+    root_logger.addHandler(fh)
+
+    # Tame noisy loggers but keep uvicorn access/error
+    logging.getLogger("uvicorn.error").setLevel(level)
+    logging.getLogger("uvicorn.access").setLevel(level)
+    for noisy in ("httpx", "openai", "asyncio", "urllib3"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
+setup_logging()
+logger = logging.getLogger("app")
+
+# =========
+# FastAPI App
+# =========
+app = FastAPI(title="Product Type Identifier API", version="1.0.0")
 
 prompt = """Help the user identify products type related to a given abbreviation or term available in Mannings HK or SaSa HK retail store. Return the top results in the format specified.
 
@@ -31,120 +102,189 @@ Hi. I'm a Hong Kong customer looking forward to buy health and beauty products t
 Lifting Cream, Honey Mask, Green Tea Essence
 User query: """
 
-# Health check endpoint
+# =========
+# Middleware: Request ID & Structured Access Logs
+# =========
+@app.middleware("http")
+async def add_request_id_and_log(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    # Attach to request state so handlers can use it if needed
+    request.state.request_id = request_id
+
+    # Log inbound request (avoid logging sensitive headers)
+    logger.info(
+        f"Incoming request {request.method} {request.url.path}",
+        extra={"request_id": request_id},
+    )
+
+    try:
+        response = await call_next(request)
+    except Exception:
+        # Let exception handlers log details; still ensure we add request_id to log record
+        logger.exception("Unhandled exception during request", extra={"request_id": request_id})
+        raise
+
+    # Add X-Request-ID to response for correlation
+    response.headers["X-Request-ID"] = request_id
+
+    logger.info(
+        f"Completed request {request.method} {request.url.path} -> {response.status_code}",
+        extra={"request_id": request_id},
+    )
+    return response
+
+# =========
+# Exception Handlers
+# =========
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    # Log as warning for 4xx, error for 5xx
+    lvl = logging.WARNING if 400 <= exc.status_code < 500 else logging.ERROR
+    logger.log(
+        lvl,
+        f"HTTPException: {exc.status_code} {exc.detail}",
+        extra={"request_id": getattr(request.state, 'request_id', None)},
+    )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "status": "error",
+            "error": {
+                "code": exc.status_code,
+                "message": exc.detail
+            },
+            "request_id": getattr(request.state, 'request_id', None)
+        },
+    )
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    # Full stack trace
+    logger.exception(
+        "Unhandled server error",
+        extra={"request_id": getattr(request.state, 'request_id', None)},
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "status": "error",
+            "error": {
+                "code": 500,
+                "message": "Internal server error"
+            },
+            "request_id": getattr(request.state, 'request_id', None)
+        },
+    )
+
+# =========
+# Utilities
+# =========
+def format_response(response: str) -> Optional[str]:
+    """Format the output response to the top CSV item only."""
+    try:
+        cleaned = response.replace("\n", "").strip()
+        if not cleaned:
+            return None
+        items = [item.strip() for item in cleaned.split(",") if item.strip()]
+        return items[0] if items else None
+    except Exception:
+        logger.exception("Error formatting response")
+        return None
+
+# =========
+# Routes
+# =========
 @app.get("/health")
 async def health_check():
     return {"status": "healthy"}
 
-# Endpoint accepting query parameter
 @app.post("/input/")
-async def post_input(text: Optional[str] = Query(None, description="Text query as query parameter")):
+async def post_input(
+    request: Request,
+    text: Optional[str] = Query(None, description="Text query as query parameter"),
+):
     """Accept query parameters, send to OpenAI Responses API, and return the model's response."""
-    
-    # Check if text was provided
+    request_id = getattr(request.state, 'request_id', None)
+
     if not text:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail="No text provided. Please provide 'text' as a query parameter (e.g., ?text=BOH)"
         )
-    
-    print("Received input:", text)
-    
-    try:
-        # Set up OpenAI client with Responses API endpoint
-        endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-        deployment_name = "Michael-Web-Search-Test"  # Your deployment name
-        api_key = os.getenv("AZURE_OPENAI_API_KEY")
-        
-        if not api_key:
-            raise HTTPException(
-                status_code=500, 
-                detail="Azure OpenAI API key not configured. Please check environment variables."
-            )
-        
-        client = OpenAI(
-            base_url=endpoint,
-            api_key=api_key
-        )
-        
-        # Call OpenAI Responses API
-        try:
-            completion = client.responses.create(
-                model=deployment_name,
-                tools=[
-                    {
-                        "type": "web_search_preview",
-                        "user_location": {
-                            "type": "approximate",
-                            "country": "HK"
-                        }
-                    }
-                ],
-                input=prompt + text,
-                timeout=30
-            )
-            
-            # Extract the response text
-            output = completion.output_text if hasattr(completion, 'output_text') else None
 
-        except Exception as e:
-            print(f"OpenAI API call failed: {str(e)}")
-            raise HTTPException(
-                status_code=503,
-                detail=f"OpenAI service error: {str(e)}"
-            )
-        
-        if not output:
-            raise HTTPException(
-                status_code=500,
-                detail="Empty response from OpenAI"
-            )
-        
-        # Format the response
-        formatted_output = format_response(output)
-        
-        return {
-            "status": "ok", 
-            "input": text, 
-            "output": formatted_output if formatted_output else "null"
-        }
-        
-    except HTTPException:
-        # Re-raise HTTP exceptions
-        raise
-    except Exception as e:
-        # Catch any other unexpected errors
-        print(f"Unexpected error: {str(e)}")
+    logger.info("Received input", extra={"request_id": request_id})
+
+    # Environment setup
+    endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+    deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT", "Michael-Web-Search-Test")
+    api_key = os.getenv("AZURE_OPENAI_API_KEY")
+
+    # Validate required settings without leaking secrets in logs
+    if not api_key:
         raise HTTPException(
             status_code=500,
-            detail=f"Internal server error: {str(e)}"
+            detail="Azure OpenAI API key not configured. Please check environment variables."
+        )
+    if not endpoint:
+        raise HTTPException(
+            status_code=500,
+            detail="Azure OpenAI endpoint not configured. Please check environment variables."
         )
 
-def format_response(response):
-    """Format the output response"""
-    try:
-        # Format the output response
-        response = response.replace("\n", "").strip()
-        
-        # Check if response is empty after cleaning
-        if not response:
-            return None
-        
-        response_list = response.split(",")
-        response_list = [item.strip() for item in response_list if item.strip()]
-        
-        # Return the top result
-        return response_list[0] if response_list else None
-    
-    except Exception as e:
-        print(f"Error formatting response: {str(e)}")
-        return None
+    client = OpenAI(base_url=endpoint, api_key=api_key)
 
+    # OpenAI call
+    try:
+        completion = client.responses.create(
+            model=deployment_name,
+            tools=[
+                {
+                    "type": "web_search_preview",
+                    "user_location": {
+                        "type": "approximate",
+                        "country": "HK"
+                    }
+                }
+            ],
+            input=prompt + text,
+            timeout=30
+        )
+
+        output = getattr(completion, "output_text", None)
+
+    except Exception as e:
+        # Don’t expose internals to clients; log details server-side
+        logger.exception("OpenAI API call failed", extra={"request_id": request_id})
+        raise HTTPException(
+            status_code=503,
+            detail="OpenAI service error"
+        ) from e
+
+    if not output:
+        logger.error("Empty response from OpenAI", extra={"request_id": request_id})
+        raise HTTPException(status_code=502, detail="Empty response from OpenAI")
+
+    formatted_output = format_response(output)
+
+    return JSONResponse (
+        status_code=200,
+        content={
+            "status": "ok",
+            "input": text,
+            "output": formatted_output if formatted_output else "null",
+            "request_id": request_id
+        }
+    )
+
+# =========
+# Entrypoint
+# =========
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
+    # NOTE: uvicorn access logs are helpful; keep them on for ops visibility
     uvicorn.run(
-        "main:app", 
-        host="0.0.0.0", 
-        port=port, 
+        "main:app",
+        host="0.0.0.0",
+        port=port,
         reload=True
     )
