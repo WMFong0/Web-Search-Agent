@@ -224,39 +224,43 @@ async def post_input(
 ):
     """Accept query parameter first, then JSON body, then error if empty."""
     request_id = getattr(request.state, 'request_id', None)
-    # init provided_text
-    provided_text = None
-    
-    # Step 1: query param first
-    provided_text = text
-
+    if text:
+        logger.info("Received input from query", extra={"request_id": request_id, "user_input_text": text})
     # Step 2: If missing or empty, fallback to body JSON
-    if not provided_text:
+    else:
         try:
             if request.headers.get("content-type", "").startswith("application/json"):
                 body = await request.json()
-                provided_text = body.get("text")
+                text = body.get("text")
+                
+                # Step 3: If still empty → error
+                if not text:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="No text provided. Provide ?text=... or JSON body {\"text\": \"...\"}"
+                    )
+                
+                logger.info("Received input from body", extra={"request_id": request_id, "user_input_text": text})
         except Exception:
             # ignore invalid json; error thrown below if still empty
-            provided_text = None
+            text = None
+            return JSONResponse (
+                status_code=404,
+                content={
+                    "status": "error",
+                    "input": "null",
+                    "output": "null",
+                    "request_id": request_id
+                }
+            )
 
-    # Step 3: If still empty → error
-    if not provided_text:
-        raise HTTPException(
-            status_code=400,
-            detail="No text provided. Provide ?text=... or JSON body {\"text\": \"...\"}"
-        )
-    
-    # Pass provided_text back
-    text = provided_text
-
-    
+    # Log the received input
     logger.info("Received input", extra={"request_id": request_id, "user_input_text": text})
 
     # Environment setup
-    endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-    deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT", "Michael-Web-Search-Test")
-    api_key = os.getenv("AZURE_OPENAI_API_KEY")
+    endpoint: str = os.getenv("AZURE_OPENAI_ENDPOINT")
+    deployment_name: str = os.getenv("AZURE_OPENAI_DEPLOYMENT", "Michael-Web-Search-Test")
+    api_key: str = os.getenv("AZURE_OPENAI_API_KEY")
 
     # Validate required settings without leaking secrets in logs
     if not api_key:
@@ -305,7 +309,7 @@ async def post_input(
         logger.error("Empty response from OpenAI", extra={"request_id": request_id})
         raise HTTPException(status_code=502, detail="Empty response from OpenAI")
 
-    formatted_output = format_response(output)
+    formatted_output: str = format_response(output)
 
     return JSONResponse (
         status_code=200,
