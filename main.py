@@ -216,27 +216,41 @@ def format_response(response: str) -> Optional[str]:
 async def health_check():
     return {"status": "healthy"}
 
+
 @app.post("/input/")
 async def post_input(
     request: Request,
     text: Optional[str] = Query(None, description="Text query as query parameter"),
 ):
-    """Accept query parameters, send to OpenAI Responses API, and return the model's response."""
+    """Accept query parameter first, then JSON body, then error if empty."""
     request_id = getattr(request.state, 'request_id', None)
+    # init provided_text
+    provided_text = None
+    
+    # Step 1: query param first
+    provided_text = text
 
-    # Grab from body if no text query exist
-    if not text:
+    # Step 2: If missing or empty, fallback to body JSON
+    if not provided_text:
         try:
-            if request.headers.get("content-type","").startswith("application/json"):
+            if request.headers.get("content-type", "").startswith("application/json"):
                 body = await request.json()
                 provided_text = body.get("text")
-            else:
-                raise HTTPException(
-                    status_code=400,
-                    detail="No text provided. Please provide 'text' as a query parameter (e.g., ?text=BOH)"
-                )
-        except Exception as e:
-            logger.exception("Empty Query and Empty Body received", extra={"request_id": request_id})
+        except Exception:
+            # ignore invalid json; error thrown below if still empty
+            provided_text = None
+
+    # Step 3: If still empty → error
+    if not provided_text:
+        raise HTTPException(
+            status_code=400,
+            detail="No text provided. Provide ?text=... or JSON body {\"text\": \"...\"}"
+        )
+    
+    # Pass provided_text back
+    text = provided_text
+
+    
     logger.info("Received input", extra={"request_id": request_id, "user_input_text": text})
 
     # Environment setup
