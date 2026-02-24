@@ -95,7 +95,7 @@ logger = logging.getLogger("app")
 # =========
 # FastAPI App
 # =========
-app = FastAPI(title="Product Type Identifier API", version="1.0.0")
+app = FastAPI(title="Product Type Identifier Web Search Agent API", version="1.0.0")
 
 prompt = """Help the user identify products type related to a given abbreviation or term available in Mannings HK or SaSa HK retail store. Return the top results in the format specified.
 
@@ -229,7 +229,7 @@ async def post_input(
             detail="No text provided. Please provide 'text' as a query parameter (e.g., ?text=BOH)"
         )
 
-    logger.info("Received input", extra={"request_id": request_id})
+    logger.info("Received input", extra={"request_id": request_id, "user_input_text": text})
 
     # Environment setup
     endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
@@ -268,6 +268,7 @@ async def post_input(
             max_output_tokens=75
         )
 
+        logger.info("OpenAI API call success", extra={"request_id": request_id, "user_input_text": text})
         output = getattr(completion, "output_text", None)
 
     except Exception as e:
@@ -337,7 +338,7 @@ if __name__ == "__main__":
     # NOTE: uvicorn access logs are helpful; keep them on for ops visibility
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=port,
         reload=True
     )

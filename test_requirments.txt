@@ -1,0 +1,4 @@
+requests
+pytest
+
+urllib3 == 1.26.20 
