@@ -27,7 +27,7 @@ def setup_logging():
     os.makedirs(log_path, exist_ok=True)
 
     # LOG_LEVEL from env: DEBUG, INFO, WARNING, ERROR, CRITICAL
-    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+    log_level: str = os.getenv("LOG_LEVEL", "INFO").upper()
     level = getattr(logging, log_level, logging.INFO)
 
     # Root logger

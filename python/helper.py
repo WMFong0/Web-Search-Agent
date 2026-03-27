@@ -57,10 +57,10 @@ def _format_response(response: str) -> str | None:
         prompt_name_index (int): System Prompt index inside prompt_name_list
     """
     try:
-        cleaned = response.replace("\n", "").strip()
+        cleaned: str = response.replace("\n", "").strip()
         if not cleaned:
             return None
-        items = [item.strip() for item in cleaned.split(",") if item.strip()]
+        items: list[str] = [item.strip() for item in cleaned.split(",") if item.strip()]
         return items[0] if items else None
     except Exception:
         logger.exception("Error formatting response")

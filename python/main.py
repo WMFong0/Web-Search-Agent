@@ -128,7 +128,30 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 # =========
 @app.get("/health")
 async def health_check() -> JSONResponse:
+    """_summary_
+    Health Check for openai and the app itself
+    Returns:
+        JSONResponse: {
+            status_code: int
+            content: {
+                status: str
+                openai: str
+            }
+        }
+    Example Output:
+    {
+        status_code=200,
+        content={
+            "status": "healthy",
+            "openai": "connected",
+        },
+    }
+    """
+    openai_ok: bool
+    detail: str | None
     openai_ok, detail = llm.health_check_openai(timeout=5)
+    
+    # Return ok if openai is ok
     if openai_ok:
         return JSONResponse(
             status_code=200,
@@ -138,6 +161,7 @@ async def health_check() -> JSONResponse:
             },
         )
 
+    # Return failed and log
     logger.warning("Health check failed: OpenAI not reachable")
     return JSONResponse(
         status_code=503,
@@ -159,18 +183,20 @@ async def post_input(
     Accept query parameter first, then JSON body, then error if empty.
     
     Args:
-        request (Request): _description_
+        request (Request): fastapi request. DO NOT TOUCH
         text (str | None, optional): _description_. Defaults to Query(None, description="Text query as query parameter").
 
     Returns:
         JSONResponse: _description_
     """
+    # Step 1: Grab request_id
     request_id = getattr(request.state, 'request_id', None)
     if text:
         logger.info("Received input from query", extra={"request_id": request_id, "user_input_text": text})
     # Step 2: If missing or empty, fallback to body JSON
     else:
         try:
+            # Grab user_input from params
             if request.headers.get("content-type", "").startswith("application/json"):
                 body = await request.json()
                 text = body.get("text")
