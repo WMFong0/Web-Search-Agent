@@ -1,9 +1,9 @@
-version: "3.9"
+version: "3.13.12"
 services:
   api:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: DockerFile
     image: mannings-sasa-fastapi:latest
     ports:
       - "8000:8000"

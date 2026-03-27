@@ -1,3 +1,30 @@
-/.env
-/.venv
-/logs
+# Python
+python/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pytest_cache/
+
+# Environments
+.env
+.venv/
+env/
+venv/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Git
+.git
+.gitignore
+
+# Byte-compiled
+*.egg-info/
+dist/
+build/
+
+# Logging
+logs/
+

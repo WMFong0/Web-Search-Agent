@@ -37,10 +37,14 @@ COPY --from=builder /wheels /wheels
 RUN pip install --no-cache-dir /wheels/*
 
 # Copy application code
-COPY main.py .
+COPY python /app/python
+COPY prompt.txt /app/prompt.txt
 
 # Expose FastAPI port
 EXPOSE 8000
+
+# Run from python app directory so absolute imports like "from helper import ..." resolve.
+WORKDIR /app/python
 
 # Switch to non-root for security
 USER appuser
@@ -48,13 +52,13 @@ USER appuser
 # Healthcheck: hit /health endpoint
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 CMD \
   python - << 'PY' || exit 1
-import urllib.request, json
-try:
-    with urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=2) as r:
-        data = json.loads(r.read().decode())
-        exit(0 if data.get("status") == "healthy" else 1)
-except Exception:
-    exit(1)
+    import urllib.request, json
+    try:
+        with urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=2) as r:
+            data = json.loads(r.read().decode())
+            exit(0 if data.get("status") == "healthy" else 1)
+    except Exception:
+        exit(1)
 PY
 
 # Use uvicorn directly (reload off in containers)
