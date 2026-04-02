@@ -42,7 +42,7 @@ def setup_logging():
     class JsonLikeFormatter(logging.Formatter):
         def format(self, record: logging.LogRecord) -> str:
             base = {
-                "ts": datetime.utcnow().isoformat(timespec="milliseconds") + "Z",
+                "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
                 "level": record.levelname,
                 "logger": record.name,
                 "msg": record.getMessage(),

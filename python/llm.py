@@ -37,7 +37,7 @@ def setup() -> OpenAI:
     
     return client
 
-def send_input(prompt: str, user_input: str) -> str:
+def send_input_web_search(prompt: str, user_input: str) -> str:
     deployment_name: str = os.getenv("AZURE_OPENAI_DEPLOYMENT", "Michael-Web-Search-Test")
     completion = client.responses.create(
             model=deployment_name,
@@ -56,6 +56,16 @@ def send_input(prompt: str, user_input: str) -> str:
         )
     return getattr(completion, "output_text", None)
 
+def send_input(prompt: str, user_input: str) -> str:
+    deployment_name: str = os.getenv("AZURE_OPENAI_DEPLOYMENT", "Michael-Web-Search-Test")
+    completion = client.responses.create(
+            model=deployment_name,
+            tools=[],
+            input=prompt + user_input,
+            timeout=30,
+            max_output_tokens=1000
+        )
+    return getattr(completion, "output_text", None)
 
 def health_check_openai(timeout: int = 5) -> tuple[bool, str | None]:
     """Perform a lightweight request to verify OpenAI connectivity."""

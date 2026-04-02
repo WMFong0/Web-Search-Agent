@@ -3,9 +3,9 @@ import logging
 from pathlib import Path
 
 # Self
-prompt_name_list = ["prompt"]
+prompt_name_list = ["Web Search Agent", "Product Comparison Agent"]
 logger = logging.getLogger("app")
-PROMPT_DIR = Path(__file__).resolve().parent.parent
+PROMPT_DIR = Path(__file__).resolve().parent.parent / "prompt"
 
 # ===============================
 # LLM
@@ -65,3 +65,21 @@ def _format_response(response: str) -> str | None:
     except Exception:
         logger.exception("Error formatting response")
         return None
+    
+    
+def _stringify_input(user_input: list[list[str]]) -> str:
+    """
+    Tailor made for Product Comparison Agent.
+
+    Args:
+        user_input (list[list[str]]): Product info 
+
+    Returns:
+        str: Stringify Product info input
+    """
+    
+    input_str: str = ""
+    for i in range(len(user_input)):
+        input_str += f"Product {i+1}:\n\nName: {user_input[i][0]}\nDescription: {user_input[i][1]}\nUsage: {user_input[i][2]}" + ("\n\n\n" if i+1 != len(user_input) else "")
+    
+    return input_str

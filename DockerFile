@@ -38,7 +38,10 @@ RUN pip install --no-cache-dir /wheels/*
 
 # Copy application code
 COPY python /app/python
-COPY prompt.txt /app/prompt.txt
+COPY prompt /app/prompt
+
+# Pre-create runtime-writable directories for non-root execution.
+RUN mkdir -p /app/logs && chown -R appuser:appuser /app
 
 # Expose FastAPI port
 EXPOSE 8000
@@ -50,16 +53,7 @@ WORKDIR /app/python
 USER appuser
 
 # Healthcheck: hit /health endpoint
-HEALTHCHECK --interval=30s --timeout=3s --retries=3 CMD \
-  python - << 'PY' || exit 1
-    import urllib.request, json
-    try:
-        with urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=2) as r:
-            data = json.loads(r.read().decode())
-            exit(0 if data.get("status") == "healthy" else 1)
-    except Exception:
-        exit(1)
-PY
+HEALTHCHECK --interval=30s --timeout=3s --retries=3 CMD python -c "import urllib.request, json; r = urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2); data = json.loads(r.read().decode()); exit(0 if data.get('status') == 'healthy' else 1)" || exit 1
 
 # Use uvicorn directly (reload off in containers)
 # NOTE: We rely on PORT env var (default 8000) to match your code.

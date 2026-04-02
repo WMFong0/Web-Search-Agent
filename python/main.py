@@ -13,7 +13,7 @@ import os
 from dotenv import load_dotenv
 
 # Fast api for api implementation
-from fastapi import FastAPI, Query, HTTPException, Request
+from fastapi import FastAPI, Query, HTTPException, Request, Body
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.openapi.docs import get_swagger_ui_html, get_redoc_html
 from fastapi.openapi.utils import get_openapi
@@ -28,12 +28,11 @@ import uvicorn
 from helper import _grab_system_prompt, _format_response
 from log import setup_logging
 import llm
+from models import Product_Information
 
 # Grab .env items
 load_dotenv()
 
-# Grab prompt
-prompt = _grab_system_prompt(0)
 # =========
 # Logging Setup
 # =========
@@ -187,7 +186,16 @@ async def post_input(
         text (str | None, optional): _description_. Defaults to Query(None, description="Text query as query parameter").
 
     Returns:
-        JSONResponse: _description_
+        JSONResponse: 
+        {
+            status_code=200,
+            content={
+                "status": "ok",
+                "input": text,
+                "output": str or "null" for null output,
+                "request_id": request_id
+            }
+        }
     """
     # Step 1: Grab request_id
     request_id = getattr(request.state, 'request_id', None)
@@ -229,7 +237,7 @@ async def post_input(
     # OpenAI call
     try:
         # Past input to openai 
-        output = llm.send_input(prompt=prompt, user_input=text)
+        output = llm.send_input_web_search(prompt=_grab_system_prompt(0), user_input=text)
         logger.info("OpenAI API call success", extra={"request_id": request_id, "user_input_text": text})
     except Exception as e:
         # Don’t expose internals to clients; log details server-side
@@ -254,7 +262,97 @@ async def post_input(
             "request_id": request_id
         }
     )
+@app.post("/input_product_comparison/")
+async def post_input_product_comparison(
+    request: Request,
+    product_input: list[Product_Information] = Body(
+        ...,
+        description="List of products for comparison",
+    ),
+) -> JSONResponse:
+    """
+    Specially made for Product Comparison Agent ONLY.
+    DO NOT REMOVE. AND DO NOT USE. 
+    
+    Args:
+        JSON Application/input:
+        [
+            {
+                "name": "...",
+                "description": "...",
+                "usage": "..."
+            }
+        ]
+    Returns:
+        JSONResponse: 
+        {
+            status_code=200,
+            content={
+                "status": "ok",
+                "input": text,
+                "output": csv-like str
+                "request_id": request_id
+            }
+        }
+    """
+    
+    # Step 1: Grab request_id
+    request_id = getattr(request.state, 'request_id', None)
+    if not product_input:
+        raise HTTPException(
+            status_code=400,
+            detail="No products provided. Provide a JSON body array of Product_Information."
+        )
+    if len(product_input) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="At least 2 products are required for comparison."
+        )
 
+    # Keep max 3 products to align with prompt constraints.
+    normalized_products = product_input[:3]
+    llm_input = "\n\n".join(
+        [
+            f"Product {idx}:\n"
+            f"Name: {p.name}\n"
+            f"Description: {p.description}\n"
+            f"Usage: {p.usage}"
+            for idx, p in enumerate(normalized_products, start=1)
+        ]
+    )
+        
+    
+    # Log the received input
+    logger.info("Received input", extra={"request_id": request_id, "user_input_text": llm_input})
+    
+    llm.setup()
+    # OpenAI call
+    try:
+        # Past input to openai 
+        output = llm.send_input(prompt=_grab_system_prompt(1), user_input=llm_input)
+        logger.info("OpenAI API call success", extra={"request_id": request_id, "user_input_text": llm_input})
+        print(output)
+    except Exception as e:
+        # Don’t expose internals to clients; log details server-side
+        logger.exception(f"OpenAI API call failed {e}", extra={"request_id": request_id})
+        raise HTTPException(
+            status_code=503,
+            detail=f"OpenAI service error. Error: {e}"
+        ) from e
+
+    if not output:
+        logger.error("Empty response from OpenAI", extra={"request_id": request_id})
+        raise HTTPException(status_code=502, detail="Empty response from OpenAI")
+
+    return JSONResponse (
+        status_code=200,
+        content={
+            "status": "ok",
+            "input": [p.__dict__ for p in normalized_products],
+            "output": output if output else "null",
+            "request_id": request_id
+        }
+    )
 
 # =========
 # OpenAPI / Swagger UI
