@@ -44,7 +44,7 @@ logger = logging.getLogger("app")
 # FastAPI App
 # =========
 
-app = FastAPI(title="Product Type Identifier Web Search Agent API", version="1.1.0")
+app = FastAPI(title="Product Type Identifier Web Search Agent and Product Comparison Agent API", version="1.1.0")
 
 # =========
 # Middleware: Request ID & Structured Access Logs
