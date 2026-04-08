@@ -1,2 +1,5 @@
 AZURE_OPENAI_API_KEY = 
 AZURE_OPENAI_ENDPOINT = 
+AZURE_OPENAI_DEPLOYMENT = 
+# Proxy disabled for Docker environment - remove this line and set ASW_PROXY_URL to use corporate proxy
+# ASW_PROXY_URL = 
