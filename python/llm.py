@@ -1,5 +1,5 @@
-from openai import OpenAI
-
+from openai import OpenAI, DefaultHttpxClient
+import httpx
 # .env
 import os
 from dotenv import load_dotenv
@@ -19,6 +19,7 @@ def setup() -> OpenAI:
     # Environment setup
     endpoint: str = os.getenv("AZURE_OPENAI_ENDPOINT")
     api_key: str = os.getenv("AZURE_OPENAI_API_KEY")
+    proxy_url: str = os.getenv("ASW_PROXY_URL", "")
 
     # Validate required settings without leaking secrets in logs
     if not api_key:
@@ -33,7 +34,24 @@ def setup() -> OpenAI:
         )
     global client
     
-    client = OpenAI(base_url=endpoint, api_key=api_key)
+    if proxy_url == "":
+        client = OpenAI(
+            base_url=endpoint, 
+            api_key=api_key,
+        )
+    else:
+        client = OpenAI(
+            base_url=endpoint, 
+            api_key=api_key,
+            http_client=(
+                DefaultHttpxClient(
+                    proxy=os.getenv("ASW_PROXY_URL"),
+                    transport=httpx.HTTPTransport(local_address="0.0.0.0"),
+                )
+                if os.getenv("ASW_PROXY_URL")
+                else None
+            ),
+        )
     
     return client
 
