@@ -57,25 +57,51 @@ async def add_request_id_and_log(request: Request, call_next):
     # Attach to request state so handlers can use it if needed
     request.state.request_id = request_id
 
-    # Log inbound request (avoid logging sensitive headers)
+    # Get client IP
+    client_ip = request.client.host if request.client else "unknown"
+
+    # Log inbound request with detailed context
     logger.info(
         f"Incoming request {request.method} {request.url.path}",
-        extra={"request_id": request_id},
+        extra={
+            "request_id": request_id,
+            "http_method": request.method,
+            "http_path": request.url.path,
+            "query_params": dict(request.query_params) if request.query_params else {},
+            "client_ip": client_ip,
+            "user_agent": request.headers.get("user-agent", "not-specified"),
+            "content_type": request.headers.get("content-type", "not-specified"),
+        },
     )
     
     try:
         response = await call_next(request)
     except Exception:
-        # Let exception handlers log details; still ensure we add request_id to log record
-        logger.exception("Unhandled exception during request", extra={"request_id": request_id})
+        # Log detailed exception info
+        logger.exception(
+            "Unhandled exception during request processing",
+            extra={
+                "request_id": request_id,
+                "http_method": request.method,
+                "http_path": request.url.path,
+                "client_ip": client_ip,
+            }
+        )
         raise
 
     # Add X-Request-ID to response for correlation
     response.headers["X-Request-ID"] = request_id
 
+    # Log response with status code
     logger.info(
         f"Completed request {request.method} {request.url.path} -> {response.status_code}",
-        extra={"request_id": request_id},
+        extra={
+            "request_id": request_id,
+            "http_method": request.method,
+            "http_path": request.url.path,
+            "http_status": response.status_code,
+            "client_ip": client_ip,
+        },
     )
     return response
 
@@ -84,12 +110,62 @@ async def add_request_id_and_log(request: Request, call_next):
 # =========
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
-    # Log as warning for 4xx, error for 5xx
+    # Extract request context for logging
+    request_id = getattr(request.state, 'request_id', None)
+    client_ip = request.client.host if request.client else "unknown"
+    
+    # Special handling for 404
+    if exc.status_code == 404:
+        # Collect all available routes
+        available_routes = []
+        for route in app.routes:
+            if hasattr(route, 'path'):
+                methods = getattr(route, 'methods', ['GET'])
+                available_routes.append(f"{route.path} [{', '.join(methods)}]")
+        
+        # Log extensive 404 error details
+        logger.log(
+            logging.WARNING,
+            f"404 Not Found: {request.method} {request.url.path}",
+            extra={
+                "request_id": request_id,
+                "http_method": request.method,
+                "http_path": request.url.path,
+                "http_status": exc.status_code,
+                "query_params": dict(request.query_params) if request.query_params else {},
+                "client_ip": client_ip,
+                "content_type": request.headers.get("content-type", "not-specified"),
+                "user_agent": request.headers.get("user-agent", "not-specified"),
+                "referer": request.headers.get("referer", "not-specified"),
+                "available_routes": available_routes,
+            },
+        )
+        
+        return JSONResponse(
+            status_code=404,
+            content={
+                "status": "error",
+                "error": {
+                    "code": 404,
+                    "message": f"Endpoint {request.method} {request.url.path} not found",
+                    "available_endpoints": available_routes if available_routes else []
+                },
+                "request_id": request_id
+            },
+        )
+    
+    # Log as warning for other 4xx, error for 5xx
     lvl = logging.WARNING if 400 <= exc.status_code < 500 else logging.ERROR
     logger.log(
         lvl,
         f"HTTPException: {exc.status_code} {exc.detail}",
-        extra={"request_id": getattr(request.state, 'request_id', None)},
+        extra={
+            "request_id": request_id,
+            "http_method": request.method,
+            "http_path": request.url.path,
+            "http_status": exc.status_code,
+            "client_ip": client_ip,
+        },
     )
     return JSONResponse(
         status_code=exc.status_code,
@@ -99,7 +175,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
                 "code": exc.status_code,
                 "message": exc.detail
             },
-            "request_id": getattr(request.state, 'request_id', None)
+            "request_id": request_id
         },
     )
 
@@ -217,16 +293,21 @@ async def post_input(
                     )
                 
                 logger.info("Received input from body", extra={"request_id": request_id, "user_input_text": text})
-        except Exception:
+        except Exception as e:
             # ignore invalid json; error thrown below if still empty
             text = None
+            logger.exception(
+                f"Error parsing request body: {type(e).__name__}: {str(e)}",
+                extra={"request_id": request_id}
+            )
             return JSONResponse (
                 status_code=404,
                 content={
                     "status": "error",
                     "input": "null",
                     "output": "null",
-                    "request_id": request_id
+                    "request_id": request_id,
+                    "details": e
                 }
             )
 

@@ -50,6 +50,25 @@ def setup_logging():
             # Add request_id if attached by middleware
             if hasattr(record, "request_id"):
                 base["request_id"] = getattr(record, "request_id")
+            # Add HTTP context for 404 and other HTTP errors
+            if hasattr(record, "http_method"):
+                base["http_method"] = getattr(record, "http_method")
+            if hasattr(record, "http_path"):
+                base["http_path"] = getattr(record, "http_path")
+            if hasattr(record, "http_status"):
+                base["http_status"] = getattr(record, "http_status")
+            if hasattr(record, "query_params"):
+                base["query_params"] = getattr(record, "query_params")
+            if hasattr(record, "client_ip"):
+                base["client_ip"] = getattr(record, "client_ip")
+            if hasattr(record, "content_type"):
+                base["content_type"] = getattr(record, "content_type")
+            if hasattr(record, "user_agent"):
+                base["user_agent"] = getattr(record, "user_agent")
+            if hasattr(record, "referer"):
+                base["referer"] = getattr(record, "referer")
+            if hasattr(record, "available_routes"):
+                base["available_routes"] = getattr(record, "available_routes")
             # Add exception info if present
             if record.exc_info:
                 base["exc_info"] = self.formatException(record.exc_info)
