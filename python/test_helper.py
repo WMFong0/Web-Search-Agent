@@ -143,7 +143,7 @@ def test_format_response_multiple_commas_between_items():
     result = _format_response(response)
     assert result == "Item 1"
 
-
+ 
 def test_format_response_chinese_characters():
     """Test _format_response with Chinese characters."""
     response = "產品A, 產品B, 產品C"
