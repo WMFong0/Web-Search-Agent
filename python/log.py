@@ -88,6 +88,46 @@ def setup_logging():
     fh.setFormatter(formatter)
     root_logger.addHandler(fh)
 
+    # Dedicated error log handler with full stack traces
+    class ErrorFormatter(logging.Formatter):
+        def format(self, record: logging.LogRecord) -> str:
+            error_msg = f"""
+================================================================================
+ERROR DETAILS
+================================================================================
+Timestamp: {datetime.datetime.now(datetime.timezone.utc).isoformat()}
+Level: {record.levelname}
+Logger: {record.name}
+Message: {record.getMessage()}
+"""
+            # Add request_id if available
+            if hasattr(record, "request_id") and record.request_id:
+                error_msg += f"Request ID: {record.request_id}\n"
+            
+            # Add HTTP context if available
+            if hasattr(record, "http_method"):
+                error_msg += f"HTTP Method: {getattr(record, 'http_method')}\n"
+            if hasattr(record, "http_path"):
+                error_msg += f"HTTP Path: {getattr(record, 'http_path')}\n"
+            if hasattr(record, "client_ip"):
+                error_msg += f"Client IP: {getattr(record, 'client_ip')}\n"
+            
+            # Add full stack trace if exception
+            if record.exc_info:
+                error_msg += f"""
+Stack Trace:
+{self.formatException(record.exc_info)}
+"""
+            
+            error_msg += "================================================================================\n"
+            return error_msg
+
+    error_formatter = ErrorFormatter()
+    efh = RotatingFileHandler(log_path / "error.log", maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8")
+    efh.setLevel(logging.ERROR)
+    efh.setFormatter(error_formatter)
+    root_logger.addHandler(efh)
+
     # Tame noisy loggers but keep uvicorn access/error
     logging.getLogger("uvicorn.error").setLevel(level)
     logging.getLogger("uvicorn.access").setLevel(level)

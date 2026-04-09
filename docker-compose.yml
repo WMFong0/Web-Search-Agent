@@ -11,4 +11,6 @@ services:
     environment:
       # Fallback if not set in .env
       PORT: "8000"
+    volumes:
+      - ./logs:/app/logs
     restart: unless-stopped

@@ -60,7 +60,21 @@ async def add_request_id_and_log(request: Request, call_next):
     # Get client IP
     client_ip = request.client.host if request.client else "unknown"
 
-    # Log inbound request with detailed context
+    # Capture request body (user input)
+    user_input = None
+    if request.method in ["POST", "PUT", "PATCH"]:
+        try:
+            body = await request.body()
+            if body:
+                try:
+                    # Try to parse as JSON
+                    user_input = body.decode("utf-8")
+                except:
+                    user_input = f"<binary data: {len(body)} bytes>"
+        except:
+            user_input = None
+
+    # Log inbound request with user input
     logger.info(
         f"Incoming request {request.method} {request.url.path}",
         extra={
@@ -71,11 +85,35 @@ async def add_request_id_and_log(request: Request, call_next):
             "client_ip": client_ip,
             "user_agent": request.headers.get("user-agent", "not-specified"),
             "content_type": request.headers.get("content-type", "not-specified"),
+            "user_input": user_input[:500] if user_input else None,  # Limit to 500 chars
         },
     )
     
+    # Capture response for logging
+    system_return = None
     try:
         response = await call_next(request)
+        
+        # Capture response body by reading from body_iterator
+        response_body = b""
+        async for chunk in response.body_iterator:
+            response_body += chunk
+        
+        if response_body:
+            try:
+                system_return = response_body.decode("utf-8")
+            except:
+                system_return = f"<binary response: {len(response_body)} bytes>"
+        
+        # Recreate the response with the captured body
+        from fastapi.responses import Response
+        new_response = Response(
+            content=response_body,
+            status_code=response.status_code,
+            headers=dict(response.headers),
+            media_type=response.media_type,
+        )
+        response = new_response
     except Exception:
         # Log detailed exception info
         logger.exception(
@@ -85,6 +123,7 @@ async def add_request_id_and_log(request: Request, call_next):
                 "http_method": request.method,
                 "http_path": request.url.path,
                 "client_ip": client_ip,
+                "user_input": user_input[:500] if user_input else None,
             }
         )
         raise
@@ -92,7 +131,7 @@ async def add_request_id_and_log(request: Request, call_next):
     # Add X-Request-ID to response for correlation
     response.headers["X-Request-ID"] = request_id
 
-    # Log response with status code
+    # Log response with status code and system return
     logger.info(
         f"Completed request {request.method} {request.url.path} -> {response.status_code}",
         extra={
@@ -101,6 +140,8 @@ async def add_request_id_and_log(request: Request, call_next):
             "http_path": request.url.path,
             "http_status": response.status_code,
             "client_ip": client_ip,
+            "user_input": user_input[:500] if user_input else None,
+            "system_return": system_return[:500] if system_return else None,  # Limit to 500 chars
         },
     )
     return response
@@ -228,6 +269,10 @@ async def health_check() -> JSONResponse:
     
     # Return ok if openai is ok
     if openai_ok:
+        logger.info(
+            "Completed request GET /health -> 200\ninput: health_check\noutput: healthy",
+            extra={"request_id": None}
+        )
         return JSONResponse(
             status_code=200,
             content={
@@ -238,6 +283,10 @@ async def health_check() -> JSONResponse:
 
     # Return failed and log
     logger.warning("Health check failed: OpenAI not reachable")
+    logger.warning(
+        "Completed request GET /health -> 503\ninput: health_check\noutput: unhealthy",
+        extra={"request_id": None}
+    )
     return JSONResponse(
         status_code=503,
         content={
@@ -334,6 +383,12 @@ async def post_input(
 
     formatted_output: str = _format_response(output)
 
+    # Log readable input/output
+    logger.info(
+        f"Completed request POST /input/ -> 200\ninput: {text}\noutput: {formatted_output[:100]}",
+        extra={"request_id": request_id}
+    )
+
     return JSONResponse (
         status_code=200,
         content={
@@ -424,6 +479,12 @@ async def post_input_product_comparison(
     if not output:
         logger.error("Empty response from OpenAI", extra={"request_id": request_id})
         raise HTTPException(status_code=502, detail="Empty response from OpenAI")
+
+    # Log readable input/output
+    logger.info(
+        f"Completed request POST /input_product_comparison/ -> 200\ninput: {len(normalized_products)} products\noutput: {output[:100]}",
+        extra={"request_id": request_id}
+    )
 
     return JSONResponse (
         status_code=200,
